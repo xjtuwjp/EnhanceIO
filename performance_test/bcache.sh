@@ -31,12 +31,15 @@ output_path="/root/eio_perf/bcache/${cache_mode}_${rread}_read_${rwrite}_write_$
 bcache_create()
 {
     echo "Creating a cache"
+    modprobe bcache
     make-bcache -B ${source_device}
-    make-bcache -C ${cache_device}
+    uuid=`make-bcache -C ${cache_device} | grep "Set UUID" | awk -F":" '{ print $2 }'`
+
     echo ${source_device} > /sys/fs/bcache/register
     echo ${cache_device} > /sys/fs/bcache/register
-    uuid=`bcache-super-show -f ${cache_device}  | grep cset.uuid | awk '{ print $2 }'`
-    cache=`ls /dev/bcache* | cut -d '/' -f3`
+    #uuid=`bcache-super-show -f ${cache_device}  | grep cset.uuid | awk '{ print $2 }'`
+    #cache=`ls /dev/bcache* | cut -d '/' -f3`
+    cache="bcache0"
     echo "uuid:$uuid cache:$cache" 
     echo $uuid > /sys/block/$cache/bcache/attach
     dev=`ls ${source_device} | cut -d '/' -f3`
@@ -63,19 +66,22 @@ bcache_create()
 bcache_delete()
 {
     echo "Deleting the cache"
-    uuid=`bcache-super-show -f ${cache_device}  | grep cset.uuid | awk '{ print $2 }'`
-    echo 1 > /sys/fs/bcache/$uuid/unregister
+    #uuid=`bcache-super-show -f ${source_device}  | grep cset.uuid | awk '{ print $2 }'`
     dev=`ls ${source_device} | cut -d '/' -f3`
     len=${#dev}
     if [ $len != "4" ]; then 
+        echo 1 > /sys/block/$dev/bcache/detach
         echo 1 > /sys/block/$dev/bcache/stop
     else 
         base=${dev:0:3} 
+        echo 1 > /sys/block/$base/$dev/bcache/detach
         echo 1 > /sys/block/$base/$dev/bcache/stop
     fi   
-    echo 1 > /sys/fs/bcache/$uuid/stop  
+    echo 1 > /sys/fs/bcache/*/unregister
+    echo 1 > /sys/fs/bcache/*/stop  
     echo "cache deleted successfully" 
-    sleep 10 
+    sleep 30
+    rmmod bcache
     return 0 
 }  
 mkdir -p ${output_path}
@@ -83,7 +89,6 @@ echo "Output path '${output_path}' is created"
 
 # Create a cache
 bcache_create 
-
 echo "running fio on: $filename"
 # Warm up the cache
 echo "${hit} % Hit_Warm_Up_${fio_blocksize}"
